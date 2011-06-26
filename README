@@ -1,0 +1,11 @@
+What is sql4csv
+sql4csv is a python library that offers an SQL "like" interface for .csv files.
+
+What else do I need?
+sql4csv is powered by pyparsing so you need to install pyparsing. pyparsing is an amazing open source project that offers an alternative approach to creating and executing simple grammars.
+
+Is there an example page?
+Yes there is: https://github.com/ccoffey/sql4csv/wiki
+
+Can I give feedback?
+Yes you can email me: coffey.cathal@gmail.com
