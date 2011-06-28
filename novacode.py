@@ -57,6 +57,7 @@ class sql4csv():
         self.row_out = {}
         self.conditions = ''
     
+    #Function for parsing binary operators.
     def parseBinaryOp(self, bo):
         bo = bo[0].lower()
         if bo in ('=', 'eq'):
@@ -271,7 +272,7 @@ if __name__ == '__main__':
     actual = "[{'lname': 'coffey', 'gender': 'male', 'age': '21', 'fav_num': '3.1415', 'fname': 'cathal'}, {'lname': 'burne', 'gender': 'female', 'age': '21', 'fav_num': '2.7182', 'fname': 'mary'}]"
     print "Test 8: %s" % (result == actual)
     
-    result = ds_0.query('select * where $age = #0(#1(), #2())', [lambda x, y: x  * y, lambda x: 7, lambda x, 3])
+    result = ds_0.query('select * where $age = #0(#1(), #2())', [lambda x, y: x  * y, lambda x: 7, lambda x: 3])
     actual = "[{'lname': 'coffey', 'gender': 'male', 'age': '21', 'fav_num': '3.1415', 'fname': 'cathal'}, {'lname': 'burne', 'gender': 'female', 'age': '21', 'fav_num': '2.7182', 'fname': 'mary'}]"
     print "Test 9: %s" % (result == actual)
     
