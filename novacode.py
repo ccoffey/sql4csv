@@ -227,6 +227,9 @@ class sql4csv():
             
             if not self.row_out == {} and (self.conditions == '' or eval(self.conditions)):
                 yield self.row_out
+
+    def join(self, tables=None, join_query):
+        return self
     
 if __name__ == '__main__':
     # Test the examples from the GitHub Wiki and make sure they return the expected results.
