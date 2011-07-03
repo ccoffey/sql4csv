@@ -1,7 +1,7 @@
 from pyparsing import *
 import csv
 
-class sql4csv():
+class sql4csv(object):
     """An SQL like interface for .csv files"""    
     def __init__(self, filename, fieldnames = None, fieldtypes = {}, delimiter=','):
         self.filename = filename
@@ -9,13 +9,20 @@ class sql4csv():
         self.fieldtypes = fieldtypes
         self.delimiter = delimiter
         
-        # Grammar definition
-        field = '$' + Combine(Word(alphanums) + Optional(OneOrMore(OneOrMore(oneOf("_ -")) + Word(alphanums))))
+        #Keywords
+        keyword_as = Keyword('as', caseless=True)
+        keyword_select = Keyword('select', caseless=True)
+        keyword_where = Keyword('where', caseless=True)
         
+        # Grammar definition
+        anumExpr = Combine(Word(alphanums) + Optional(OneOrMore(OneOrMore(oneOf("_ -")) + Word(alphanums))))
+        field = Literal('$') + anumExpr('field_name')
+        as_field = Literal('$') + anumExpr('new_field_name')
+            
         where_field = field.copy()
         where_field.setParseAction(lambda f: self.parse_field_as(f, True))
 
-        field_as = field + Optional(Literal('as') + field)
+        field_as = field + Optional(keyword_as + as_field)
         field_as_in_function = field_as.copy()
         
         field_as.setParseAction(lambda f: self.parse_field_as(f, False))
@@ -32,7 +39,7 @@ class sql4csv():
         intNum.setParseAction(lambda n: int(n[0]))
         
         fun = Forward()
-        function = '#' + Word(nums) + Group(Literal('(') + Optional(delimitedList(Group(realNum | intNum | quotedString | field_as_in_function | fun))) + Literal(')')) + Optional('as' + field)
+        function = '#' + Word(nums) + Group(Literal('(') + Optional(delimitedList(Group(realNum | intNum | quotedString | field_as_in_function | fun))) + Literal(')')) + Optional(keyword_as + field)
         function.setParseAction(lambda f: self.parse_function(f))
         fun << function
 
@@ -52,7 +59,7 @@ class sql4csv():
         whereCondition = Group((columnRval + binop + columnRval).setParseAction(lambda c: self.parseCondition(c)) | ( "(" + whereExpression + ")" ))
         whereExpression << whereCondition + ZeroOrMore( ( and_ | or_ ).setParseAction(lambda c: self.parseAndOr(c)) + whereExpression )
 
-        self.grammar = CaselessLiteral('select') + delimitedList(star | field_as | function) + Optional(CaselessLiteral('where') + whereExpression)
+        self.grammar = keyword_select + delimitedList(star | field_as | function) + Optional(keyword_where + whereExpression)
         self.row_in = {}
         self.row_out = {}
         self.conditions = ''
@@ -122,81 +129,33 @@ class sql4csv():
             return self.row_out[key]
         else:
             return fun(*params)
-
-    # Function for parsing a field_as.
+    
     def parse_field_as(self, tokens, inside_function=False):
-        # If there are two tokens then they are of the form 
-        # f[0] = '$'
-        # f[1] = 'field'
-        if len(tokens) == 2:
-            # If row_in does not have they key then check row_out.
-            # This is a powerful idea which lets you do queries of the following form
-            # select $a as $b, $b as $c
-            key = tokens[1]
-            if self.row_in.has_key(key):
-                if inside_function:
-                    # If the type of this value is know then cast.
-                    if self.fieldtypes.has_key(key):                    
-                        return self.fieldtypes[key](self.row_in[key])
-                    else:
-                        return self.row_in[key]
-                else:
-                    self.row_out[key] = self.row_in[key]
-                    
-                    # If the type of this value is know then cast.
-                    if self.fieldtypes.has_key(key):                    
-                        self.row_out[key] = self.fieldtypes[key](self.row_out[key])
-
-                    return self.row_out[key]
-            
-            elif self.row_out.has_key(key):
-                if inside_function:
-                    if self.fieldtypes.has_key(key):                    
-                        return self.fieldtypes[key](self.row_out[key])
-                    else:
-                        return self.row_out[key]
-                else:                                
-                    # If the type of this value is know then cast.
-                    if self.fieldtypes.has_key(key):                    
-                        self.row_out[key] = self.fieldtypes[key](self.row_out[key])
-                    
-                    return self.row_out[key]
-                        
-            # If neither row_in or row_out contain the key then raise a key error.
-            else:
-                raise('Key Error: %s' % key)
+        key = tokens['field_name']
         
-        # If there are 5 tokens then they are of the form
-        # f[2] = 'as'
-        # f[3] = '$'
-        # f[4] = 'new_field'
-        elif len(tokens) == 5:
-            key = tokens[1]
-            new_key = tokens[4]
-            
-            if self.row_in.has_key(key):
-                self.row_out[new_key] = self.row_in[key]
-                
-                if self.fieldtypes.has_key(key):
-                    self.row_out[new_key] = self.fieldtypes[key](self.row_out[new_key])
-                
-                return self.row_out[new_key]
-            
-            elif self.row_out.has_key(key):
-                self.row_out[new_key] = self.row_out[key]
-                
-                if self.fieldtypes.has_key(key):
-                   self.row_out[new_key] = self.fieldtypes[key](self.row_out[new_key])
-                
-                return self.row_out[new_key]
-            
-            # If neither row_in or row_out contain the key then raise a key error.
-            else:
-                raise('Key Errorr: %s' % key)
-               
-        # Any other number of tokens is an error --should not be possible given a strict grammar--.
+        #A field can be in the input row or output row. 
+        if key in self.row_in:
+            row = self.row_in[key]
+        
+        elif key in self.row_out:
+            row = self.row_out[key]
+
         else:
-            raise('Error: Invalid number of tokens: %s' % tokens)
+            raise('Key Error: %s' % key)
+        
+        #If we know the type of this field, convert it.
+        if key in self.fieldtypes:                    
+            row = self.fieldtypes[key](row)
+        
+        if 'new_field_name' in tokens:
+            new_key = tokens['new_field_name']
+            self.row_out[new_key] = row
+        else:
+            #If we are inside a function, then this field is a parameter and should not be included in the output row.
+            if not inside_function:
+                self.row_out[key] = row
+    
+        return row
     
     # Execute a query on a csv file and return the results immediately.
     def query(self, query_str, funs = []):
@@ -227,11 +186,18 @@ class sql4csv():
             
             if not self.row_out == {} and (self.conditions == '' or eval(self.conditions)):
                 yield self.row_out
-
-    def join(self, tables=None, join_query):
-        return self
+    
+    @staticmethod
+    def join(table0, table1, join_query):
+        return 'joined'
     
 if __name__ == '__main__':
+    # Test the join function
+    ds_persons = sql4csv('persons.csv', fieldtypes={'P_Id': int})
+    ds_orders = sql4csv('orders.csv', fieldtypes={'O_Id': int})
+
+    ds_joined = sql4csv.join(ds_persons, ds_orders, '0.P_Id == 1.O_Id')
+
     # Test the examples from the GitHub Wiki and make sure they return the expected results.
     ds_0 = sql4csv('ds_0.csv')
     
@@ -271,15 +237,15 @@ if __name__ == '__main__':
     actual = "[{'lname': 'coffey', 'gender': 'male', 'age': '21', 'fav_num': '3.1415', 'fname': 'cathal'}, {'lname': 'burne', 'gender': 'female', 'age': '21', 'fav_num': '2.7182', 'fname': 'mary'}]"
     print "Test 7: %s" % (result == actual)
     
-    result = ds_0.query('select * where $age = #0(), [lambda: 21]')
+    result = str(ds_0.query('select * where $age = #0()', [lambda: 21]))
     actual = "[{'lname': 'coffey', 'gender': 'male', 'age': '21', 'fav_num': '3.1415', 'fname': 'cathal'}, {'lname': 'burne', 'gender': 'female', 'age': '21', 'fav_num': '2.7182', 'fname': 'mary'}]"
     print "Test 8: %s" % (result == actual)
     
-    result = ds_0.query('select * where $age = #0(#1(), #2())', [lambda x, y: x  * y, lambda x: 7, lambda x: 3])
+    result = str(ds_0.query('select * where $age = #0(#1(), #2())', [lambda x, y: x  * y, lambda: 7, lambda: 3]))
     actual = "[{'lname': 'coffey', 'gender': 'male', 'age': '21', 'fav_num': '3.1415', 'fname': 'cathal'}, {'lname': 'burne', 'gender': 'female', 'age': '21', 'fav_num': '2.7182', 'fname': 'mary'}]"
     print "Test 9: %s" % (result == actual)
     
-    result = ds_0.query('select * where ($age = 21) or ($age = 23) and $fav_num > 2')
+    result = str(ds_0.query('select * where ($age = 21) or ($age = 23) and $fav_num > 2'))
     actual = "[{'lname': 'coffey', 'gender': 'male', 'age': '21', 'fav_num': '3.1415', 'fname': 'cathal'}, {'lname': 'burne', 'gender': 'female', 'age': '21', 'fav_num': '2.7182', 'fname': 'mary'}]"
     print "Test 10: %s" % (result == actual)
     
